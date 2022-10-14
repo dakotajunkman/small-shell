@@ -4,6 +4,7 @@
 #include <string.h>
 #include <stdlib.h>
 #include <stdbool.h>
+#include <unistd.h>
 
 #define MAX_INPUT 2048
 #define MAX_ARGS 512
@@ -20,5 +21,4 @@ struct command {
     char* redirectTo;
     bool runInBackground;
 };
-
 
