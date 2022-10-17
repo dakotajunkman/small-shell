@@ -27,35 +27,52 @@ struct command {
  * Ref: https://stackoverflow.com/questions/45931613/using-getchar-inside-an-infinite-loop-in-c
  */ 
 void captureCommand(char* inputArr) {
-   int idx = 0;
-   int inputChar;
-   int newline = '\n';
-   int nullterm = '\0';
-    
-    // prompt user for input
+    int idx = 0;
+    int inputChar;
+    int newline = '\n';
+    int nullterm = '\0';
+   
+    // cleans out whatever was in the array previously
+    memset(inputArr, nullterm, MAX_INPUT);
+
     printf(": ");
     fflush(stdout);
     
-    // gather input one character at a time until newline is hit
-   for (;;) {
-       inputChar = getchar();
-
-       // break out when newline is hit or input reaches max
-       if (inputChar == newline || idx == MAX_INPUT - 1) break;
-
-       inputArr[idx++] = inputChar;
+    for (;;) {
+        inputChar = getchar();
+        if (inputChar == newline || idx == MAX_INPUT - 1) break;
+        inputArr[idx++] = inputChar;
    }
+}
 
-   // terminate this thing
-   inputArr[idx] = nullterm;
+/**
+ * parses command input by the user and fills in the command struct
+ */ 
+bool parseInput(char* command, struct command* commandStruct) {
+    // empty out the arg array
+    memset(commandStruct->args, 0, MAX_ARGS);
+    int argIdx = 0;
+    
+    // set up some comparators for common inputs
+    char* newline = "\n";
+    char* comment = "#";
+    char* reDirectOut = ">";
+    char* redirectIn = "<";
+    char* background = "&";
+    char* pidVar = "$$";
+    
+    // dip early if the entry was blank or a comment
+    if (command[0] == '\0' || command[0] == '#') return false;
+
+    return true;
 }
 
 int main(void) {
     char command[MAX_INPUT];
+    struct command commandStruct;
 
     do {
         captureCommand(command);
-        printf("command was: %s\n", command);
     } while (strcmp(command, "exit") != 0);
 
     return EXIT_SUCCESS;
