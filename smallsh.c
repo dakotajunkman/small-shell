@@ -45,6 +45,64 @@ void captureCommand(char* inputArr) {
    }
 }
 
+/*
+ * Calculates number of bytes to malloc for arguments
+ */
+int calcMallocLength(char* token) {
+    pid_t pid = getpid();
+    char pidStr[10];
+    sprintf(pidStr, "%d", pid); // https://stackoverflow.com/questions/53230155/converting-pid-t-to-string
+
+    int pidLen = strlen(pidStr);
+    int tokenLen = strlen(token);
+
+    // iterate over the token and check for $$ instances
+    for (size_t i = 0; i < strlen(token) - 1; ++i) {
+        if (token[i] == '$' && token[i + 1] == '$') {
+            tokenLen -= 2; // subtract out the length of "$$"
+            tokenLen += pidLen; // add in length of pid
+            i++; // we can skip the next character since we know it is $
+        }
+    }
+
+    return tokenLen;
+}
+
+/**
+ * Writes pid to argument string starting at passed in index
+ */
+void writePidToArg(char* pid, char* arg, int argIdx, int pidLen) {
+    for (int i = 0; i < pidLen; ++i)
+        arg[argIdx + i] = pid[i]; // offset argIdx by i to write forward in the array
+}
+
+/**
+ * Copies token into arg
+ * Expands $$ to pid
+ */
+void copyWithVarExpansion(char* token, char* arg) {
+    pid_t pid = getpid();
+    char pidStr[10];
+    sprintf(pidStr, "%d", pid);
+
+    int pidLen = strlen(pidStr);
+    int tokenLen = strlen(token);
+
+    int tokenIdx;
+    int argIdx = 0;
+
+    for (tokenIdx = 0; tokenIdx < tokenLen; ++tokenIdx) {
+        // looking for instance of $$ in the token
+        if (token[tokenIdx] == '$' && tokenIdx + 1 < tokenLen && token[tokenIdx + 1] == '$') {
+            writePidToArg(pidStr, arg, argIdx, pidLen);
+            argIdx += pidLen;
+            tokenIdx++;
+        } else {
+            arg[argIdx++] = token[tokenIdx];
+        }
+    }
+}
+
 /**
  * parses command input by the user and fills in the command struct
  */ 
@@ -66,32 +124,24 @@ int parseInput(char* command, struct command* commandStruct) {
     
     // dip early if the entry was blank or a comment
     if (command[0] == '\0' || command[0] == '#') return 0;
-    
-
-    // get the pid as a string
-    pid_t pid = getpid();
-    char pidStr[10];
-    sprintf(pidStr, "%d", pid); // https://stackoverflow.com/questions/53230155/converting-pid-t-to-string
 
     char* saveptr;
     char* token;
     int argLength;
     
-    // continually split the command on spaces FOREVER, jk only until it is NULL
+    // continually split the command on spaces FOREVER, jk only until it is NULL lulz
     token = strtok_r(command, " ", &saveptr);
     while (token && argIdx < MAX_ARGS) {
-        if (strcmp(token, pidVar) == 0) {
-            argLength = strlen(pidStr) + 1;
-            token = pidStr;
-        } else
-            argLength = strlen(token) + 1;
+        argLength = calcMallocLength(token) + 1; // + 1 for null terminator
         commandStruct->args[argIdx] = (char*) malloc(argLength);
+        memset(commandStruct->args[argIdx], '\0', argLength);
+        copyWithVarExpansion(token, commandStruct->args[argIdx]);
         if (argIdx == 0) {
             commandStruct->command = (char*) malloc(argLength);
-            strcpy(commandStruct->command, token);
+            memset(commandStruct->command, '\0', argLength);
+            strcpy(commandStruct->command, commandStruct->args[argIdx]);
         }
-        
-        strcpy(commandStruct->args[argIdx++], token);
+        argIdx++;
         token = strtok_r(NULL, " ", &saveptr);
     }
 
