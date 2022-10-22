@@ -7,6 +7,7 @@
 #include <unistd.h>
 #include <sys/stat.h>
 #include <fcntl.h>
+#include <signal.h>
 
 #define MAX_INPUT 2048
 #define MAX_ARGS 512
@@ -202,6 +203,10 @@ int parseInput(char* command, struct command* commandStruct) {
     if (commandStruct->runInBackground) {
         free(commandStruct->args[--argIdx]); // deallocate memory
         commandStruct->args[argIdx] = NULL; // set index to null and decrement argIdx since the argument is gone
+        
+        // set flag based on whether background commands are currently allowed
+        // we can just set the flag to the value of backGroundAllowed
+        commandStruct->runInBackground = backGroundAllowed;
     }
 
     // check for redirections
@@ -316,6 +321,17 @@ void writePidToProcessArray(struct processes* processes, pid_t pid) {
 }
 
 /**
+ * Sets up child process signal handling
+ */
+void createChildSigHandlers(struct command* command) {
+    // foreground process needs a different SIGINT handler
+    // Ref: https://stackoverflow.com/questions/49404021/different-signal-handlers-for-parent-and-child
+    if (!command->runInBackground)
+        signal(SIGINT, SIG_DFL);
+    signal(SIGTSTP, SIG_IGN);
+}
+
+/**
  * Creates a new process to run a command
  * Ref: https://canvas.oregonstate.edu/courses/1890465/pages/exploration-process-api-executing-a-new-program?module_item_id=22511470
  */ 
@@ -332,6 +348,7 @@ void runProcess(struct command* command, struct processes* processes) {
         
         // spawned process
         case 0:
+            createChildSigHandlers(command);
             setRedirect(command);
             execvp(command->command, command->args);
             perror("execvp failed");
@@ -354,6 +371,10 @@ void runProcess(struct command* command, struct processes* processes) {
                     exitStatus = WEXITSTATUS(childStatus);
                 else
                     exitStatus = WTERMSIG(childStatus);
+
+                // if process was killed by SIGINT we need to print it immediately
+                if (exitStatus == 2)
+                    displayStatus();
             }
             break;
     }
@@ -425,6 +446,51 @@ void checkBackgroundProcesses(struct processes* processes) {
     }
 }
 
+/**
+ * Handles SIGTSTP
+ * Toggles whether background processes are allowed
+ * Notifies user of entering and exiting foreground only mode
+ */
+void handleSIGSTP() {
+    if (backGroundAllowed) 
+        write(STDOUT_FILENO, "Entering foreground-only mode (& is now ignored)\n", 49);
+    else
+        write (STDOUT_FILENO, "Exiting foreground-only mode\n", 29);
+
+    // reprompt for input
+    write(STDOUT_FILENO, ": ", 2);
+
+    backGroundAllowed = !backGroundAllowed;
+}
+
+/**
+ * Creates signal handlers to properly handle SIGINT and SIGTSTP
+ * Ref: https://canvas.oregonstate.edu/courses/1890465/pages/exploration-signal-handling-api?module_item_id=22511478
+ */
+void createSigHandlers() {
+    struct sigaction sigintHandler;
+    sigintHandler.sa_handler = SIG_IGN;
+    sigfillset(&sigintHandler.sa_mask);
+    sigintHandler.sa_flags = 0;
+    sigaction(SIGINT, &sigintHandler, NULL);
+
+    struct sigaction sigtstpHandler;
+    sigtstpHandler.sa_handler = handleSIGSTP;
+    sigfillset(&sigtstpHandler.sa_mask);
+    sigtstpHandler.sa_flags = SA_RESTART;
+    sigaction(SIGTSTP, &sigtstpHandler, NULL);
+}
+
+/**
+ * Loops over processes array and kills any outstanding processes
+ */
+void killBackgroundProcesses(struct processes* processes) {
+    for (int i = 0; i < MAX_PROCESSES; ++i) {
+        if (processes->pids[i] != 0)
+            kill(processes->pids[i], SIGKILL);
+    }
+}
+
 int main(void) {
     char command[MAX_INPUT];
     struct command commandStruct;
@@ -437,6 +503,9 @@ int main(void) {
     processes.curIdx = 0;
     backGroundAllowed = true; // default here to start
 
+    // set up the custom signal handlers
+    createSigHandlers();
+
     do {
         captureCommand(command);
         int commandArgs = parseInput(command, &commandStruct);
@@ -447,6 +516,7 @@ int main(void) {
         checkBackgroundProcesses(&processes);
     } while (strcmp(command, "exit") != 0);
 
+    killBackgroundProcesses(&processes);
     return EXIT_SUCCESS;
 }
 
