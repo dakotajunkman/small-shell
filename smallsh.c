@@ -334,7 +334,7 @@ void runProcess(struct command* command, struct processes* processes) {
         case 0:
             setRedirect(command);
             execvp(command->command, command->args);
-            perror("execvp failed\n");
+            perror("execvp failed");
             exit(1);
             break;
 
